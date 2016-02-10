@@ -1,11 +1,10 @@
 'use strict';
 
-var port = 63000;
-
 var domain = require('domain');
 var http = require('http'); // TODO: https?
 var io = require('socket.io');
 
+var config = require('./mese.config');
 var util = require('./mese.util');
 var db = require('./mese.db');
 var game = require('./mese.game');
@@ -17,9 +16,9 @@ process.on('uncaughtException', function (e) {
     util.log(e.stack || e);
 });
 
-var server = http.createServer(web.handler).listen(port);
+var server = http.createServer(web.handler).listen(config.port);
 
-util.log('server init ' + port);
+util.log('server init ' + config.port);
 
 db.init(function () {
     io(server).on('connection', function (socket) {
@@ -239,6 +238,7 @@ db.init(function () {
                             },
                             function (result) {
                                 result.game = data.game;
+                                result.uid = map.uid;
                                 result.players = map.players;
 
                                 if (result.now_period != data.period) { // TODO: simplify
@@ -320,14 +320,14 @@ db.init(function () {
                                 afterSubmit(gameData);
                             },
                             function (gameData) {
-                                util.log('submit declined ' + authName + ' ' + data.game);
+                                util.log('submission declined ' + authName + ' ' + data.game);
 
                                 socket.emit('submit_decline');
                                 afterSubmit(gameData);
                             }
                         );
                     } else {
-                        util.log('submit not allowed ' + authName + ' ' + data.game);
+                        util.log('submission not allowed ' + authName + ' ' + data.game);
 
                         socket.emit('submit_fail');
                     }

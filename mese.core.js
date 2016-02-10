@@ -2,12 +2,13 @@
 
 var childProcess = require('child_process');
 
+var config = require('./mese.config');
 var util = require('./mese.util');
 
 var execCore = function (args, input, callback, fail) {
     util.log('exec ' + JSON.stringify(args));
 
-    var proc = childProcess.spawn('./mese', args);
+    var proc = childProcess.spawn(config.core, args);
     var output = [];
 
     if (input) {
@@ -19,7 +20,7 @@ var execCore = function (args, input, callback, fail) {
     });
 
     proc.on('close', function (status) {
-        if (proc.status) {
+        if (status) {
             fail(status, Buffer.concat(output));
         } else {
             callback(Buffer.concat(output));

@@ -4,6 +4,8 @@ var socket = io(window.location.origin);
 
 // message
 
+var windowActive = false;
+
 var showMessage = function () {
     $('#message')
         .clearQueue()
@@ -34,11 +36,13 @@ var removeMessage = function () {
 };
 
 var hideMessage = function () {
-    $('#message')
-        .clearQueue()
-        .stop()
-        .delay(2000)
-        .fadeOut(2000, removeMessage);
+    if (windowActive) {
+        $('#message')
+            .clearQueue()
+            .stop()
+            .delay(2000)
+            .fadeOut(2000, removeMessage);
+    }
 };
 
 var message = function (message) {
@@ -50,8 +54,16 @@ var message = function (message) {
     hideMessage();
 };
 
+$(window).focus(function () {
+    windowActive = true;
+    hideMessage();
+});
+
+$(window).blur(function () {
+    windowActive = false;
+});
+
 $('#message').hover(showMessage, hideMessage);
-$('#message').mousemove(showMessage);
 $('#message').click(removeMessage);
 $('#message').on('touchstart', removeMessage);
 
@@ -114,52 +126,6 @@ $('#util td').dblclick(function (event) {
 
 var currentName = undefined;
 
-$('#login_name').change(function () {
-    if (/^[A-Za-z0-9_ ]+$/.test($('#login_name').val())) {
-        $('#login_name').removeClass('wrong');
-    } else {
-        $('#login_name').addClass('wrong');
-    }
-});
-
-$('#login_name').keypress(function (event) {
-    if (event.which == 13) {
-        $('#login_password').focus();
-    }
-});
-
-$('#login_password').keypress(function (event) {
-    if (event.which == 13) {
-        $('#login_submit').click();
-    }
-});
-
-$('#login_submit').click(function (event) {
-    event.preventDefault();
-
-    var name = $('#login_name').val();
-    var password = $('#login_password').val();
-    $('#login_password').val('');
-
-    // auto login
-    if ($('#login_remember').prop('checked')) {
-        localStorage.setItem(
-            'MESE_login',
-            JSON.stringify({
-                name: name,
-                password: password, // TODO: hash?
-            })
-        );
-    } else {
-        localStorage.removeItem('MESE_login');
-    }
-
-    socket.emit('login', {
-        name: name,
-        password: password, // TODO: hash?
-    });
-});
-
 var loginDone = function (name, reg) {
     currentName = name;
 
@@ -189,6 +155,58 @@ var autoLogin = function () {
         $('#login_name').val(loginInfoObj.name);
     }
 };
+
+$('#login_name').change(function () {
+    if (/^[A-Za-z0-9_ ]+$/.test($('#login_name').val())) {
+        $('#login_name').removeClass('wrong');
+    } else {
+        $('#login_name').addClass('wrong');
+    }
+});
+
+$('#login_name').keypress(function (event) {
+    if (event.which == 13) {
+        $('#login_password').focus();
+    }
+});
+
+$('#login_password').keypress(function (event) {
+    if (event.which == 13) {
+        $('#login_submit').click();
+    }
+});
+
+$('#login_remember').click(function () {
+    if (!$('#login_remember').prop('checked')) {
+        localStorage.removeItem('MESE_login');
+    }
+});
+
+$('#login_submit').click(function (event) {
+    event.preventDefault();
+
+    var name = $('#login_name').val();
+    var password = $('#login_password').val();
+    $('#login_password').val('');
+
+    // auto login
+    if ($('#login_remember').prop('checked')) {
+        localStorage.setItem(
+            'MESE_login',
+            JSON.stringify({
+                name: name,
+                password: password, // TODO: hash?
+            })
+        );
+    } else {
+        localStorage.removeItem('MESE_login');
+    }
+
+    socket.emit('login', {
+        name: name,
+        password: password, // TODO: hash?
+    });
+});
 
 socket.on('login_new', function (data) {
     loginDone(data.name, true);
@@ -252,6 +270,40 @@ socket.on('password_fail', function (data) {
 
 var currentList = undefined;
 
+var updateList = function (data) {
+    currentList = data;
+
+    $('#list_content').empty();
+
+    for (var i in currentList) {
+        if (currentList[i]) {
+            $('#list_content').prepend(
+                $('<input type="button" />')
+                    .val(i)
+                    .click(function (game) {
+                        return function (event) {
+                            event.preventDefault();
+
+                            loadReport(game);
+                        }
+                    } (i))
+            );
+        }
+    }
+
+    $('#list').removeClass('hide');
+};
+
+// auto refresh
+setInterval(
+    function () {
+        if (!$('#list').hasClass('hide')) {
+            socket.emit('list');
+        }
+    },
+    60000
+);
+
 $('#subscribe_game').change(function () {
     if (/^[A-Za-z0-9_ ]+$/.test($('#subscribe_game').val())) {
         $('#subscribe_game').removeClass('wrong');
@@ -277,30 +329,6 @@ $('#subscribe_submit').click(function (event) {
     });
 });
 
-var updateList = function (data) {
-    currentList = data;
-
-    $('#list_content').empty();
-
-    for (var i in currentList) {
-        if (currentList[i]) {
-            $('#list_content').prepend(
-                $('<input type="button" />')
-                    .val(i)
-                    .click(function (game) {
-                        return function (event) {
-                            event.preventDefault();
-
-                            loadReport(game);
-                        }
-                    } (i))
-            );
-        }
-    }
-
-    $('#list').removeClass('hide');
-};
-
 socket.on('subscribe_list', updateList);
 
 socket.on('subscribe_update', updateList);
@@ -309,64 +337,13 @@ socket.on('subscribe_fail', function (data) {
     message('Game not found');
 });
 
-// auto refresh
-setInterval(
-    function () {
-        if (!$('#list').hasClass('hide')) {
-            socket.emit('list');
-        }
-    },
-    60000
-);
-
 // report
 
 var currentGame = undefined;
 var currentPeriod = undefined;
 var currentUid = undefined;
 
-for (var i = 0; i < 16; ++i) { // max = 16
-    $('#report_players')
-        .append('<th bind="' + i + '"></th>');
-    $('#report_list [xbind]')
-        .append('<td bind="' + i + '"></td>');
-}
-
-$('.report_div [bind]')
-    .append('<span target="last"><span></span>&nbsp;</span>')
-    .append('<span target="now"><span></span></span>')
-    .append('<span target="next">&nbsp;<span></span></span>');
-
-$('#submit_price').change(function () {
-    $('#submit_price').val(
-        0.01 * Math.round(100 * $('#submit_price').val())
-    );
-});
-$('#submit_prod').change(function () {
-    $('#submit_prod').val(
-        Math.round($('#submit_prod').val())
-    );
-    $('#submit_prod_rate').text(
-        Math.round(
-            100 * $('#submit_prod').val() / $('#submit_prod').attr('max')
-        )
-    );
-});
-$('#submit_mk').change(function () {
-    $('#submit_mk').val(
-        0.01 * Math.round(100 * $('#submit_mk').val())
-    );
-});
-$('#submit_ci').change(function () {
-    $('#submit_ci').val(
-        0.01 * Math.round(100 * $('#submit_ci').val())
-    );
-});
-$('#submit_rd').change(function () {
-    $('#submit_rd').val(
-        0.01 * Math.round(100 * $('#submit_rd').val())
-    );
-});
+var verboseEnabled = false;
 
 var initReport = function (game, period, uid) {
     if (game !== currentGame) {
@@ -446,22 +423,54 @@ var loadHash = function () {
         loadReport(urlHash);
     }
 };
+
+var reloadReport = function () {
+    if (!$('#report').hasClass('hide')) {
+        socket.emit('report', {
+            game: currentGame,
+            period: currentPeriod,
+            uid: currentUid,
+        });
+    }
+};
+
+// add items
+for (var i = 0; i < 16; ++i) { // max = 16
+    $('#report_players')
+        .append('<th bind="' + i + '"></th>');
+    $('#report_list [xbind]')
+        .append('<td bind="' + i + '"></td>');
+}
+
+// auto refresh
+setInterval(reloadReport, 30000);
+
+// load the game
 loadHash();
 $(window).on('hashchange', loadHash);
 
-// auto refresh
-setInterval(
-    function () {
-        if (!$('#report').hasClass('hide')) {
-            socket.emit('report', {
-                game: currentGame,
-                period: currentPeriod,
-                uid: currentUid,
-            });
-        }
-    },
-    30000
-);
+$('.report_div [bind]')
+    .append('<span target="last"><span></span>&nbsp;</span>')
+    .append('<span target="now"><span></span></span>')
+    .append('<span target="next">&nbsp;<span></span></span>');
+
+$('#report_refresh').click(function () {
+    reloadReport();
+});
+
+$('#report_expand').click(function () {
+    if (verboseEnabled) {
+        verboseEnabled = false;
+
+        $('.report_verbose').addClass('hide');
+        $('#report_expand').text('+');
+    } else {
+        verboseEnabled = true;
+
+        $('.report_verbose').removeClass('hide');
+        $('#report_expand').text('-');
+    }
+});
 
 socket.on('report_early', function (data) {
     showStatus(data.status);
@@ -479,7 +488,7 @@ socket.on('report_player', function (data) {
     if (data.now_period >= 3) {
         // showReport($('#report_decisions'), data.last_decisions, 'last');
         // showReport($('#report_data_early'), data.last_data_early, 'last');
-        // showReport($('#report_data'), data.last_data, 'last');
+        showReport($('#report_data'), data.last_data, 'last');
         showReport($('#report_decisions'), data.last_data_public.decisions, 'last', true);
         showReport($('#report_data_early'), data.last_data_public.data_early, 'last');
         showReport($('#report_data'), data.last_data_public.data, 'last', true);
@@ -573,6 +582,41 @@ socket.on('report_fail', function (data) {
 
 // submit
 
+$('#submit_price').change(function () {
+    $('#submit_price').val(
+        0.01 * Math.round(100 * $('#submit_price').val())
+    );
+});
+
+$('#submit_prod').change(function () {
+    $('#submit_prod').val(
+        Math.round($('#submit_prod').val())
+    );
+    $('#submit_prod_rate').text(
+        Math.round(
+            100 * $('#submit_prod').val() / $('#submit_prod').attr('max')
+        )
+    );
+});
+
+$('#submit_mk').change(function () {
+    $('#submit_mk').val(
+        0.01 * Math.round(100 * $('#submit_mk').val())
+    );
+});
+
+$('#submit_ci').change(function () {
+    $('#submit_ci').val(
+        0.01 * Math.round(100 * $('#submit_ci').val())
+    );
+});
+
+$('#submit_rd').change(function () {
+    $('#submit_rd').val(
+        0.01 * Math.round(100 * $('#submit_rd').val())
+    );
+});
+
 $('#submit_submit').click(function (event) {
     event.preventDefault();
 
@@ -588,21 +632,20 @@ $('#submit_submit').click(function (event) {
 });
 
 socket.on('submit_ok', function (data) {
-    message('Submit ok');
+    message('Submission ok');
 });
 
 socket.on('submit_decline', function (data) {
-    message('Submit declined');
+    message('Submission declined');
 });
 
 socket.on('submit_fail', function (data) {
-    message('Submit not allowed');
+    message('Submission not allowed');
 });
 
 // connection
 
 socket.on('connect', function () {
-    // TODO
     autoLogin();
 });
 
