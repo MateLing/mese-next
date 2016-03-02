@@ -2,22 +2,18 @@
 
 var mongodb = require('mongodb').MongoClient;
 
-var config = require('./mese.config');
+var task = require('./mese.task');
 
-var dbStorage = undefined;
-var memStorage = {
-    users: {},
-    games: {},
-};
+var collections = undefined;
 
-module.exports.init = function (callback) {
+module.exports.init = function (db, callback) {
     mongodb.connect(
-        config.db,
+        db,
         function (err, db) {
             if (err) {
                 throw err;
             } else {
-                dbStorage = {
+                collections = {
                     users: db.collection('users'),
                     games: db.collection('games'),
                 };
@@ -27,74 +23,60 @@ module.exports.init = function (callback) {
     );
 };
 
-module.exports.access = function (lv1, lv2) {
-    return {
-        staticGet: function (key, callback) {
-            dbStorage[lv1].find({
-                _id: lv2
-            }).toArray(function (err, docs) {
-                if (err) {
-                    throw err;
-                } else if (docs.length == 1) {
-                    callback(docs[0][key]);
-                } else {
-                    callback(undefined);
-                }
-            });
-        },
-        staticGetMulti: function (callback) {
-            dbStorage[lv1].find({
-                _id: lv2
-            }).toArray(function (err, docs) {
-                if (err) {
-                    throw err;
-                } else if (docs.length == 1) {
-                    callback(docs[0]);
-                } else {
-                    callback(undefined);
-                }
-            });
-        },
-        staticSet: function (key, value, callback) {
-            var op = {$set: {}};
-            op.$set[key] = value;
-
-            dbStorage[lv1].updateOne({
-                _id: lv2
-            }, op, {upsert: true}, function (err, doc) {
-                if (err) {
-                    throw err;
-                } else {
-                    callback(doc);
-                }
-            });
-        },
-        staticSetMulti: function (map, callback) {
-            var op = {$set: map};
-
-            dbStorage[lv1].updateOne({
-                _id: lv2
-            }, op, {upsert: true}, function (err, doc) {
-                if (err) {
-                    throw err;
-                } else {
-                    callback(doc);
-                }
-            });
-        },
-        dynamicGet: function (key) {
-            if (!memStorage[lv1][lv2]) {
-                return;
+module.exports.get = function (lv1, lv2, callback) {
+    collections[lv1]
+        .find({_id: lv2})
+        .toArray(function (err, docs) {
+            if (err) {
+                throw err;
+            } else if (docs.length == 1) { // notice: never > 1
+                callback(docs[0]);
+            } else {
+                callback(undefined);
             }
+        });
+};
 
-            return memStorage[lv1][lv2][key];
-        },
-        dynamicSet: function (key, value) {
-            if (!memStorage[lv1][lv2]) {
-                memStorage[lv1][lv2] = {};
+module.exports.list = function (lv1, callback) {
+    collections[lv1]
+        .find({}, {_id: 1})
+        .toArray(function (err, docs) {
+            if (err) {
+                throw err;
+            } else {
+                var list = [];
+
+                for (var i in docs) {
+                    list.push(docs[i]._id);
+                }
+
+                callback(list);
             }
+        });
+};
 
-            memStorage[lv1][lv2][key] = value;
-        },
+module.exports.update = function (lv1, lv2, callback) {
+    var setter = function (diff, callback) {
+        collections[lv1].updateOne(
+            {_id: lv2},
+            {$set: diff},
+            {upsert: true},
+            function (err, upd) {
+                if (err) {
+                    throw err;
+                } else {
+                    callback();
+                }
+            }
+        );
     };
+
+    task(lv1, lv2, function (next) {
+        module.exports.get(
+            lv1, lv2,
+            function (doc) {
+                callback(doc, setter, next);
+            }
+        );
+    });
 };

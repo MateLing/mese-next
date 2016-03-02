@@ -11,7 +11,7 @@ var execCore = function (args, input, callback, fail) {
     var proc = childProcess.spawn(config.core, args);
     var output = [];
 
-    if (input) {
+    if (input !== undefined) {
         proc.stdin.write(input);
     }
 
@@ -20,7 +20,7 @@ var execCore = function (args, input, callback, fail) {
     });
 
     proc.on('close', function (status) {
-        if (status) {
+        if (status != 0) {
             fail(status, Buffer.concat(output));
         } else {
             callback(Buffer.concat(output));
@@ -29,7 +29,13 @@ var execCore = function (args, input, callback, fail) {
 };
 
 var stdFail = function (status, output) {
-    throw Error('exec fail: ' + status);
+    throw Error('exec fail ' + status);
+};
+
+var evalCallback = function (callback) {
+    return function (data) {
+        callback(eval('(' + data + ')'));
+    };
 };
 
 module.exports.init = function (count, preset, settings, callback) {
@@ -42,7 +48,7 @@ module.exports.init = function (count, preset, settings, callback) {
 
     execCore(
         args,
-        Buffer(0),
+        undefined,
         callback,
         stdFail
     );
@@ -102,7 +108,7 @@ module.exports.printFull = function (gameData, callback) {
     execCore(
         ['print_full'],
         gameData,
-        callback,
+        evalCallback(callback),
         stdFail
     );
 };
@@ -111,7 +117,7 @@ module.exports.printPlayerEarly = function (gameData, player, callback) {
     execCore(
         ['print_player_early', player],
         gameData,
-        callback,
+        evalCallback(callback),
         stdFail
     );
 };
@@ -120,7 +126,7 @@ module.exports.printPlayer = function (gameData, player, callback) {
     execCore(
         ['print_player', player],
         gameData,
-        callback,
+        evalCallback(callback),
         stdFail
     );
 };
@@ -129,7 +135,7 @@ module.exports.printPublic = function (gameData, callback) {
     execCore(
         ['print_public'],
         gameData,
-        callback,
+        evalCallback(callback),
         stdFail
     );
 };

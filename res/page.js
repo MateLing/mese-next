@@ -1,12 +1,32 @@
 'use strict';
 
+// connection
+
 var socket = io(window.location.origin);
+
+var connected = false;
+
+socket.on('connect', function () {
+    connected = true;
+    message('Connected');
+
+    autoLogin();
+});
+
+socket.on('disconnect', function () {
+    connected = false;
+    message('Connection lost');
+});
 
 // message
 
 var windowActive = false;
 
 var showMessage = function () {
+    if ($('#message p').length == 0) {
+        return;
+    }
+
     $('#message')
         .clearQueue()
         .stop()
@@ -49,6 +69,11 @@ var message = function (message) {
     $('#message').append(
         $('<p />').text(message)
     );
+    if ($('#message p').length > 5) {
+        $('#message p:first').remove();
+    }
+
+    $('#user_message').text(message);
 
     showMessage();
     hideMessage();
@@ -83,13 +108,13 @@ var showSide = function () {
                 // IE8 workaround
                 if ($('#side').position().left != 0) {
                     $('#side').css('left', '0');
-                    $('#report').css('left', '16em');
+                    $('body').css('padding-left', '16em');
                 }
             });
-        $('#report')
+        $('body')
             .clearQueue()
             .stop()
-            .animate({left: '16rem'});
+            .animate({'padding-left': '16rem'});
     }
 };
 
@@ -101,43 +126,48 @@ var hideSide = function () {
             .css('overflow-y', 'hidden')
             .clearQueue()
             .stop()
-            .animate({left: '-15.5rem'}, 2000, function () {
+            .animate({left: '-15.5rem'}, 1000, function () {
                 // IE8 workaround
                 if ($('#side').position().left == 0) {
                     $('#side').css('left', '-15.5em');
-                    $('#report').css('left', '0.5em');
+                    $('body').css('padding-left', '0.5em');
                 }
             });
-        $('#report')
+        $('body')
             .clearQueue()
             .stop()
-            .animate({left: '0.5rem'}, 2000);
+            .animate({'padding-left': '0.5rem'}, 1000);
     }
 };
 
 $('#side').click(showSide);
 $('#side').on('touchstart', showSide);
 $('#side').dblclick(hideSide);
+$('#side_hide').click(function (event) {
+    hideSide();
+    event.stopPropagation();
+});
 $('#util td').dblclick(function (event) {
     event.stopPropagation();
 });
 
 // login
 
-var currentName = undefined;
-
 var loginDone = function (name, reg) {
-    currentName = name;
-
     $('#user_name').text(
-        reg ? currentName + ' (new user)' : currentName
+        reg ? name + ' (new user)' : name
     );
+    $('#submit_name').text(name); // notice: #submit_??? is in #report
 
     $('#user').removeClass('hide');
-    $('#password').removeClass('hide');
+    $('#login').addClass('hide');
+    $('#login_show').removeClass('hide');
+    $('#password').addClass('hide');
+    $('#password_show').removeClass('hide');
     $('#subscribe').removeClass('hide');
-    $('#list').addClass('hide');
 
+    // update the game list
+    $('#list').addClass('hide');
     socket.emit('list');
 
     if (currentGame) {
@@ -155,6 +185,14 @@ var autoLogin = function () {
         $('#login_name').val(loginInfoObj.name);
     }
 };
+
+$('#login_show').click(function () {
+    // reset auto login
+    localStorage.removeItem('MESE_login');
+
+    $('#login').removeClass('hide');
+    $('#login_show').addClass('hide');
+});
 
 $('#login_name').change(function () {
     if (/^[A-Za-z0-9_ ]+$/.test($('#login_name').val())) {
@@ -176,9 +214,9 @@ $('#login_password').keypress(function (event) {
     }
 });
 
-$('#login_remember').click(function () {
-    if (!$('#login_remember').prop('checked')) {
-        localStorage.removeItem('MESE_login');
+$('#login_remember').keypress(function (event) {
+    if (event.which == 13) {
+        $('#login_submit').click();
     }
 });
 
@@ -198,8 +236,6 @@ $('#login_submit').click(function (event) {
                 password: password, // TODO: hash?
             })
         );
-    } else {
-        localStorage.removeItem('MESE_login');
     }
 
     socket.emit('login', {
@@ -209,15 +245,15 @@ $('#login_submit').click(function (event) {
 });
 
 socket.on('login_new', function (data) {
-    loginDone(data.name, true);
+    loginDone(data, true);
 
-    message('New user: ' + data.name);
+    message('New user: ' + data);
 });
 
 socket.on('login_ok', function (data) {
-    loginDone(data.name, false);
+    loginDone(data, false);
 
-    message('Login: ' + data.name);
+    message('Login: ' + data);
 });
 
 socket.on('login_fail', function (data) {
@@ -228,6 +264,11 @@ socket.on('login_fail', function (data) {
 });
 
 // password
+
+$('#password_show').click(function () {
+    $('#password').removeClass('hide');
+    $('#password_show').addClass('hide');
+});
 
 $('#password_old').keypress(function (event) {
     if (event.which == 13) {
@@ -249,9 +290,6 @@ $('#password_submit').click(function (event) {
     $('#password_old').val('');
     $('#password_new').val('');
 
-    // reset auto login
-    localStorage.removeItem('MESE_login');
-
     socket.emit('password', {
         password: password, // TODO: hash?
         newPassword: newPassword, // TODO: hash?
@@ -259,10 +297,16 @@ $('#password_submit').click(function (event) {
 });
 
 socket.on('password_ok', function (data) {
+    // reset auto login
+    localStorage.removeItem('MESE_login');
+
     message('Password changed');
 });
 
 socket.on('password_fail', function (data) {
+    // reset auto login
+    // localStorage.removeItem('MESE_login');
+
     message('Wrong password');
 });
 
@@ -297,7 +341,7 @@ var updateList = function (data) {
 // auto refresh
 setInterval(
     function () {
-        if (!$('#list').hasClass('hide')) {
+        if (connected && !$('#list').hasClass('hide')) {
             socket.emit('list');
         }
     },
@@ -333,15 +377,26 @@ socket.on('subscribe_list', updateList);
 
 socket.on('subscribe_update', updateList);
 
-socket.on('subscribe_fail', function (data) {
+socket.on('subscribe_fail_list', function (data) {
+    message('List not found');
+});
+
+socket.on('subscribe_fail_game', function (data) {
     message('Game not found');
 });
 
 // report
 
+// DOM change
+$('#report [bind]')
+    .append('<span class="last"><span></span>&nbsp;</span>')
+    .append('<span class="now"><span></span></span>')
+    .append('<span class="next">&nbsp;<span></span></span>');
+
 var currentGame = undefined;
 var currentPeriod = undefined;
 var currentUid = undefined;
+var currentSettings = undefined;
 
 var verboseEnabled = false;
 
@@ -350,7 +405,7 @@ var initReport = function (game, period, uid) {
         hideSide();
         message('Game: ' + game);
     }
-    if (period !== currentPeriod) {
+    if (game === currentGame && period !== currentPeriod) {
         message('Period: ' + period);
     }
 
@@ -360,15 +415,15 @@ var initReport = function (game, period, uid) {
 
     $('#subscribe_game').val(currentGame);
 
-    $('#report_title').text(
-        'Period ' + (currentPeriod - 1) + ' of Game "' + currentGame + '"'
-    );
+    $('#report_game').text(currentGame);
+    $('#report_period').text(currentPeriod - 1);
 
     $('#submit_game').text(currentGame);
     $('#submit_period').text(currentPeriod);
-    $('#submit_name').text(currentName);
 
-    $('.report_div [target]').addClass('hide');
+    $('.last').addClass('hide');
+    $('.now').addClass('hide');
+    $('.next').addClass('hide');
 };
 
 var showReport = function (head, data, tail, xbind /* patch */) {
@@ -377,7 +432,7 @@ var showReport = function (head, data, tail, xbind /* patch */) {
     }
 
     if (typeof data == 'string' || typeof data == 'number') {
-        var target = head.find('[target=' + tail + ']');
+        var target = head.find('.' + tail);
 
         if (target.length == 1) {
             target.find('span').text(data);
@@ -387,7 +442,7 @@ var showReport = function (head, data, tail, xbind /* patch */) {
         for (var i in data) {
             // top-level bind
             if (xbind && data[i] instanceof Array /* notice: optimization */) {
-                showReport($('.report_div [xbind=' + i + ']'), data[i], tail);
+                showReport($('#report [xbind=' + i + ']'), data[i], tail);
             }
 
             // path-based bind
@@ -396,22 +451,41 @@ var showReport = function (head, data, tail, xbind /* patch */) {
     }
 };
 
+var initPlayerList = function (count) {
+    // remove items
+
+    $('#report_players [bind]').remove();
+    $('#report_list [xbind] [bind]').remove();
+
+    // add items
+
+    var spanLast = '<span class="last"><span></span>&nbsp;</span>';
+    var spanNow = '<span class="now"><span></span></span>';
+
+    for (var i = 0; i < count; ++i) {
+        $('#report_players')
+            .append('<th bind="' + i + '">' + spanNow + '</th>');
+        $('#report_list [xbind]')
+            .append('<td bind="' + i + '">' + spanLast + spanNow + '</td>');
+    }
+};
+
 var showStatus = function (status) {
-    for (var i = 0; i < 16; ++i) { // max = 16
+    $('#report_players [bind]').removeClass('next');
+
+    for (var i = 0; status; ++i) {
         if (status & (1 << i)) {
             // done
-            $('#report_players [bind=' + i + ']').addClass('hint_next');
-        } else {
-            // not done
-            $('#report_players [bind=' + i + ']').removeClass('hint_next');
+            $('#report_players [bind=' + i + ']').addClass('next');
         }
+
+        status &= ~(1 << i);
     }
 };
 
 var loadReport = function (game) {
     socket.emit('report', {
         game: game,
-        period: -1, // force reload
         uid: -1, // force reload
     });
 };
@@ -428,35 +502,26 @@ var reloadReport = function () {
     if (!$('#report').hasClass('hide')) {
         socket.emit('report', {
             game: currentGame,
-            period: currentPeriod,
             uid: currentUid,
         });
     }
 };
 
-// add items
-for (var i = 0; i < 16; ++i) { // max = 16
-    $('#report_players')
-        .append('<th bind="' + i + '"></th>');
-    $('#report_list [xbind]')
-        .append('<td bind="' + i + '"></td>');
-}
-
 // auto refresh
-setInterval(reloadReport, 30000);
+setInterval(
+    function () {
+        if (connected) {
+            reloadReport();
+        }
+    },
+    30000
+);
 
 // load the game
 loadHash();
 $(window).on('hashchange', loadHash);
 
-$('.report_div [bind]')
-    .append('<span target="last"><span></span>&nbsp;</span>')
-    .append('<span target="now"><span></span></span>')
-    .append('<span target="next">&nbsp;<span></span></span>');
-
-$('#report_refresh').click(function () {
-    reloadReport();
-});
+$('#report_refresh').click(reloadReport);
 
 $('#report_expand').click(function () {
     if (verboseEnabled) {
@@ -480,6 +545,7 @@ socket.on('report_early', function (data) {
 });
 
 socket.on('report_player', function (data) {
+    initPlayerList(data.players.length); // prepare DOM
     initReport(data.game, data.now_period, data.uid);
 
     showStatus(data.status);
@@ -505,39 +571,44 @@ socket.on('report_player', function (data) {
     if (data.next_settings) {
         showReport($('#report_settings'), data.next_settings, 'next');
 
-        $('#submit_price')
-            .attr('min', data.next_settings.limits.price_min)
-            .attr('max', data.next_settings.limits.price_max)
-            .val(data.decisions.price);
-        $('#submit_prod')
-            .attr('min', 0)
-            .attr('max', data.data_early.balance.size)
-            .val(
+        var settingsStr = JSON.stringify(data.next_settings);
+        if (settingsStr !== currentSettings) {
+            $('#submit_price')
+                .attr('min', data.next_settings.limits.price_min)
+                .attr('max', data.next_settings.limits.price_max)
+                .val(data.decisions.price);
+            $('#submit_prod')
+                .attr('min', 0)
+                .attr('max', data.data_early.balance.size)
+                .val(
+                    Math.round(
+                        data.data_early.balance.size
+                        * data.data_early.production.prod_rate
+                    )
+                );
+            $('#submit_prod_rate').text(
                 Math.round(
-                    data.data_early.balance.size
-                    * data.data_early.production.prod_rate
+                    100 * data.data_early.production.prod_rate
                 )
             );
-        $('#submit_prod_rate').text(
-            Math.round(
-                100 * data.data_early.production.prod_rate
-            )
-        );
-        $('#submit_mk')
-            .attr('min', 0)
-            .attr('max', data.next_settings.limits.mk_limit)
-            .val(data.decisions.mk);
-        $('#submit_ci')
-            .attr('min', 0)
-            .attr('max', data.next_settings.limits.ci_limit)
-            .val(data.decisions.ci);
-        $('#submit_rd')
-            .attr('min', 0)
-            .attr('max', data.next_settings.limits.rd_limit)
-            .val(data.decisions.rd);
+            $('#submit_mk')
+                .attr('min', 0)
+                .attr('max', data.next_settings.limits.mk_limit)
+                .val(data.decisions.mk);
+            $('#submit_ci')
+                .attr('min', 0)
+                .attr('max', data.next_settings.limits.ci_limit)
+                .val(data.decisions.ci);
+            $('#submit_rd')
+                .attr('min', 0)
+                .attr('max', data.next_settings.limits.rd_limit)
+                .val(data.decisions.rd);
+        }
 
+        currentSettings = settingsStr;
         $('#submit input').attr('disabled', false);
     } else {
+        currentSettings = undefined;
         $('#submit input').attr('disabled', true);
     }
 
@@ -547,6 +618,7 @@ socket.on('report_player', function (data) {
 });
 
 socket.on('report_public', function (data) {
+    initPlayerList(data.players.length); // prepare DOM
     initReport(data.game, data.now_period, data.uid);
 
     showStatus(data.status);
@@ -567,13 +639,10 @@ socket.on('report_public', function (data) {
         showReport($('#report_settings'), data.next_settings, 'next');
     }
 
+    currentSettings = undefined;
     $('#submit').addClass('hide');
 
     $('#report').removeClass('hide');
-});
-
-socket.on('report_status', function (data) {
-    showStatus(data);
 });
 
 socket.on('report_fail', function (data) {
@@ -639,16 +708,10 @@ socket.on('submit_decline', function (data) {
     message('Submission declined');
 });
 
-socket.on('submit_fail', function (data) {
+socket.on('submit_fail_game', function (data) {
+    message('Game not found');
+});
+
+socket.on('submit_fail_player', function (data) {
     message('Submission not allowed');
-});
-
-// connection
-
-socket.on('connect', function () {
-    autoLogin();
-});
-
-socket.on('disconnect', function () {
-    message('Connection lost');
 });
